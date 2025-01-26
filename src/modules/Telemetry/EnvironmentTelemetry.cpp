@@ -39,6 +39,7 @@
 #include "Sensor/T1000xSensor.h"
 #include "Sensor/TSL2591Sensor.h"
 #include "Sensor/VEML7700Sensor.h"
+#include "Sensor/SoilSensorSimulator.h"
 
 BMP085Sensor bmp085Sensor;
 BMP280Sensor bmp280Sensor;
@@ -62,6 +63,9 @@ BMP3XXSensor bmp3xxSensor;
 T1000xSensor t1000xSensor;
 #endif
 CGRadSensSensor cgRadSens;
+#ifdef USE_SOIL_SIMULATOR
+SoilSensorSimulator soilSensor;
+#endif
 
 #define FAILED_STATE_SENSOR_READ_MULTIPLIER 10
 #define DISPLAY_RECEIVEID_MEASUREMENTS_ON_SCREEN true
@@ -151,6 +155,10 @@ int32_t EnvironmentTelemetryModule::runOnce()
                 result = max17048Sensor.runOnce();
             if (cgRadSens.hasSensor())
                 result = cgRadSens.runOnce();
+            #ifdef USE_SOIL_SIMULATOR
+            if (soilSensor.hasSensor())
+                result = soilSensor.runOnce();
+            #endif
 #endif
         }
         return result;
@@ -254,6 +262,22 @@ void EnvironmentTelemetryModule::drawFrame(OLEDDisplay *display, OLEDDisplayUiSt
     if (lastMeasurement.variant.environment_metrics.radiation != 0)
         display->drawString(x, y += _fontHeight(FONT_SMALL),
                             "Rad: " + String(lastMeasurement.variant.environment_metrics.radiation, 2) + "µR/h");
+
+    if (lastMeasurement.variant.soil_metrics.has_temperature ||
+        lastMeasurement.variant.soil_metrics.has_moisture) {
+        display->drawString(x, y += _fontHeight(FONT_SMALL),
+                          "Soil T/M: " + String(lastMeasurement.variant.soil_metrics.temperature, 1) + "°C / " +
+                          String(lastMeasurement.variant.soil_metrics.moisture, 1) + "%");
+    }
+
+    if (lastMeasurement.variant.soil_metrics.has_conductivity ||
+        lastMeasurement.variant.soil_metrics.has_ph) {
+        display->drawString(x, y += _fontHeight(FONT_SMALL),
+                          "EC/pH: " + String(lastMeasurement.variant.soil_metrics.conductivity, 0) + "µS / " +
+                          String(lastMeasurement.variant.soil_metrics.ph, 1));
+    }
+
+
 }
 
 bool EnvironmentTelemetryModule::handleReceivedProtobuf(const meshtastic_MeshPacket &mp, meshtastic_Telemetry *t)
@@ -407,6 +431,13 @@ bool EnvironmentTelemetryModule::getEnvironmentTelemetry(meshtastic_Telemetry *m
         valid = valid && cgRadSens.getMetrics(m);
         hasSensor = true;
     }
+
+    #ifdef USE_SOIL_SIMULATOR
+    if (soilSensor.hasSensor()) {
+        valid = valid && soilSensor.getMetrics(m);
+        hasSensor = true;
+    }
+    #endif
 
 #endif
     return valid && hasSensor;
